@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import deploy from './deploy';
 import Escrow from './Escrow';
 
-const provider = new ethers.providers.Web3Provider(window.ethereum);
+const walletProvider = new ethers.providers.Web3Provider(window.ethereum);
 
 export async function approve(escrowContract, signer) {
   const approveTxn = await escrowContract.connect(signer).approve();
@@ -14,13 +14,18 @@ function App() {
   const [escrows, setEscrows] = useState([]);
   const [account, setAccount] = useState();
   const [signer, setSigner] = useState();
+  const [approvedEscrows, setApprovedEscrows] = useState(() => {
+    const storedEscrows = localStorage.getItem("approvedEscrows");
+    return storedEscrows ? JSON.parse(storedEscrows) : [];
+  });
+
 
   useEffect(() => {
     async function getAccounts() {
-      const accounts = await provider.send('eth_requestAccounts', []);
+      const accounts = await walletProvider.send('eth_requestAccounts', []);
 
       setAccount(accounts[0]);
-      setSigner(provider.getSigner());
+      setSigner(walletProvider.getSigner());
     }
 
     getAccounts();
@@ -29,9 +34,9 @@ function App() {
   async function newContract() {
     const beneficiary = document.getElementById('beneficiary').value;
     const arbiter = document.getElementById('arbiter').value;
-    const value = ethers.BigNumber.from(document.getElementById('wei').value);
+    const value = ethers.utils.parseEther(document.getElementById('eth').value);
     const escrowContract = await deploy(signer, arbiter, beneficiary, value);
-
+    const senderAddress = await signer.getAddress();
 
     const escrow = {
       address: escrowContract.address,
@@ -44,6 +49,18 @@ function App() {
             'complete';
           document.getElementById(escrowContract.address).innerText =
             "✓ It's been approved!";
+
+          const newApprovedEscrows = ([
+            ...approvedEscrows, { 
+              tx: escrowContract.address, 
+              arbiter, beneficiary, 
+              senderAddress, 
+              value 
+            }
+          ]);
+
+          setApprovedEscrows(newApprovedEscrows);
+          localStorage.setItem("approvedEscrows", JSON.stringify(newApprovedEscrows));
         });
 
         await approve(escrowContract, signer);
@@ -52,9 +69,9 @@ function App() {
 
     setEscrows([...escrows, escrow]);
   }
-
+  
   return (
-    <>
+    <div className='flex justify-between w-full'>
       <div className="contract">
         <h1> New Contract </h1>
         <label>
@@ -68,8 +85,8 @@ function App() {
         </label>
 
         <label>
-          Deposit Amount (in Wei)
-          <input type="text" id="wei" />
+          Deposit Amount (in Eth)
+          <input type="text" id="eth" />
         </label>
 
         <div
@@ -94,7 +111,40 @@ function App() {
           })}
         </div>
       </div>
-    </>
+
+      <div className="existing-contracts">
+        <h1> Approved Contracts </h1>
+
+        <div id="container">
+          {approvedEscrows.map((address) => {
+            return (
+              <ul className="fields">
+                <li>
+                  <div className='font-semibold'> Transaction Hash </div>
+                  <div> {address.tx} </div>
+                </li>
+                <li>
+                  <div className='font-semibold'> Sender </div>
+                  <div> {address.senderAddress} </div>
+                </li>
+                <li>
+                  <div className='font-semibold'> Value </div>
+                  <div> {parseInt(address.value.hex) / 10 ** 18} Eth</div>
+                </li>
+                <li>
+                  <div className='font-semibold'> Beneficiary </div>
+                  <div> {address.beneficiary} </div>
+                </li>
+                <li>
+                  <div className='font-semibold'> Arbiter </div>
+                  <div> {address.arbiter} </div>
+                </li>
+              </ul>
+            )
+          })}
+        </div>
+      </div>
+    </div>
   );
 }
 
